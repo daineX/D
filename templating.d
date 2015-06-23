@@ -1,6 +1,6 @@
-import std.algorithm.iteration: map;
+import std.algorithm.iteration: map, reduce;
 import std.container.array: Array;
-import std.array: array, join;
+import std.array: array, back, front, join;
 import std.range: iota;
 import std.regex;
 import std.stdio;
@@ -30,6 +30,11 @@ class Node
     string render(int indent=0)
     {
         return join(array(map!(a => a.render(indent + 1))(this.children)));
+    }
+
+    bool is_text()
+    {
+        return false;
     }
 }
 
@@ -134,7 +139,8 @@ class TagNode: Node
             childs = " ";
         if (this.children.length)
             childs ~= super.render(indent);
-        bool new_line = this.children.length > 0;
+        bool all_text = reduce!"a && b.is_text()"(true, this.children);
+        bool new_line = this.children.length > 0 && !all_text;
         if (this.children.length || this.remainder)
             close = this.render_closing_tag(indent, new_line);
         return start ~ childs ~ close;
@@ -235,6 +241,11 @@ class TextNode: Node
         return this.line;
     }
 
+    override bool is_text()
+    {
+        return true;
+    }
+
     unittest
     {
         auto t = new TextNode("%body");
@@ -304,7 +315,13 @@ class Template
             if (line.length == 0)
                 continue;
             int indent = this.depth(line);
-            auto node = new TagNode(line.stripLeft());
+            line = line.stripLeft();
+
+            Node node;
+            if (line.front() == '%')
+                node = new TagNode(line);
+            else
+                node = new TextNode(line);
 
             while (true) {
                 auto stack_item = stack.back();
@@ -339,6 +356,12 @@ class Template
         auto tmpl = new Template("%head\n\t%title Foobar\n%html\n\t%body");
         auto output = tmpl.render();
         assert(output == "\n<head>\n    <title>Foobar</title>\n</head>\n<html>\n    <body></body>\n</html>", output);
+    }
+    unittest
+    {
+        auto tmpl = new Template("%h1\n\tFoobar");
+        auto output = tmpl.render();
+        assert(output == "\n<h1>Foobar</h1>", output);
     }
 
     unittest
