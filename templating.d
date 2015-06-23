@@ -1,5 +1,7 @@
 import std.algorithm.iteration: map;
+import std.container.array: Array;
 import std.array: array, join;
+import std.range: iota;
 import std.regex;
 import std.stdio;
 import std.string;
@@ -132,8 +134,9 @@ class TagNode: Node
             childs = " ";
         if (this.children.length)
             childs ~= super.render(indent);
+        bool new_line = this.children.length > 0;
         if (this.children.length || this.remainder)
-            close = this.render_closing_tag(indent, true);
+            close = this.render_closing_tag(indent, new_line);
         return start ~ childs ~ close;
     }
 
@@ -156,7 +159,7 @@ class TagNode: Node
         else
             html ~= this.render_tag_end(true);
         if (this.remainder)
-            html ~= this.remainder;
+            html ~= this.remainder.stripLeft();
         return join(html, "");
     }
 
@@ -216,7 +219,7 @@ class TagNode: Node
         t.add_child(ot);
 
         auto rendered = t.render();
-        assert(rendered == "\n<foobar>\n    <p>\n    </p>\n</foobar>", "\"" ~ tr(rendered, " ", ".") ~ "\"");
+        assert(rendered == "\n<foobar>\n    <p></p>\n</foobar>", "\"" ~ tr(rendered, " ", ".") ~ "\"");
     }
 }
 
@@ -255,9 +258,16 @@ unittest
     assert(root.render(0) == "%body%div");
 }
 
+struct StackItem
+{
+    Node node;
+    int indent;
+}
+
 class Template
 {
     string data;
+    int TAB_INDENT = 4;
 
     this(string data)
     {
@@ -269,15 +279,74 @@ class Template
         return haml_line;
     }
 
+    int depth(string line)
+    {
+        int indent = 0;
+        foreach (character; line)
+        {
+            if (character == ' ')
+                indent += 1;
+            else if (character == '\t')
+                indent += this.TAB_INDENT;
+            else break;
+        }
+        return indent;
+    }
+
     string render()
     {
-        return this.data;
+        Array!StackItem stack;
+        auto rootNode = new Node("");
+        stack ~= StackItem(rootNode, -1);
+
+        foreach(line; this.data.split("\n"))
+        {
+            if (line.length == 0)
+                continue;
+            int indent = this.depth(line);
+            auto node = new TagNode(line.stripLeft());
+
+            while (true) {
+                auto stack_item = stack.back();
+                if (stack_item.indent >= indent)
+                    stack.removeBack();
+                else
+                    break;
+            }
+            stack.back().node.add_child(node);
+
+            auto stack_item = StackItem(node, indent);
+            stack ~= stack_item;
+        }
+        return rootNode.render(-1);
     }
 
     unittest
     {
-        auto tmpl = new Template("Foobar");
-        assert(tmpl.render() == "Foobar");
+        auto tmpl = new Template("%html\n\t%body\n\t\t%h1");
+        auto output = tmpl.render();
+        assert(output == "\n<html>\n    <body>\n        <h1></h1>\n    </body>\n</html>", output);
+    }
+    unittest
+    {
+        auto tmpl = new Template("%head\n%html");
+        auto output = tmpl.render();
+        assert(output == "\n<head></head>\n<html></html>", output);
+    }
+
+    unittest
+    {
+        auto tmpl = new Template("%head\n\t%title Foobar\n%html\n\t%body");
+        auto output = tmpl.render();
+        assert(output == "\n<head>\n    <title>Foobar</title>\n</head>\n<html>\n    <body></body>\n</html>", output);
+    }
+
+    unittest
+    {
+        auto tmpl = new Template("");
+        assert(tmpl.depth("    Foobar") == 4);
+        assert(tmpl.depth("\tFoobar") == 4);
+        assert(tmpl.depth(" \t Foobar") == 6);
     }
 };
 
