@@ -1,6 +1,7 @@
 import std.algorithm.iteration: map, reduce;
 import std.container.array: Array;
 import std.array: array, back, front, join;
+import std.file: read;
 import std.range: iota;
 import std.regex;
 import std.stdio;
@@ -158,7 +159,7 @@ class TagNode: Node
             {
                 evaluated_attrs ~= attr.key ~ "=\"" ~ attr.value ~ "\"";
             }
-            html ~= join(evaluated_attrs);
+            html ~= join(evaluated_attrs, " ");
         }
         if (this.children.length || this.remainder)
             html ~= this.render_tag_end(false);
@@ -312,14 +313,20 @@ class Template
 
         foreach(line; this.data.split("\n"))
         {
-            if (line.length == 0)
-                continue;
             int indent = this.depth(line);
             line = line.stripLeft();
+            if (line.length == 0)
+                continue;
 
             Node node;
             if (line.front() == '%')
                 node = new TagNode(line);
+            else if (line.front() == '#')
+                node = new TagNode("%div" ~ line);
+            else if (line.front() == '.')
+                node = new TagNode("%div" ~ line);
+            else if (line[0 .. 2] == "//")
+                continue;
             else
                 node = new TextNode(line);
 
@@ -373,7 +380,15 @@ class Template
     }
 };
 
-int main()
+int main(string[] args)
 {
-    return 0;
+    if (args.length > 1)
+    {
+        auto filename = args[1];
+        auto tmplData = cast(string) read(filename);
+        auto tmpl = new Template(tmplData);
+        writeln(tmpl.render());
+        return 0;
+    }
+    return 1;
 }
